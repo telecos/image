@@ -575,12 +575,12 @@ enum DecoderState {
 }
 
 /// Iterator over image rows for streaming BMP decoding.
-/// 
+///
 /// Created by calling `BmpDecoder::into_rows()`. Each call to `next()` attempts to
 /// decode one row of the image. Returns `Some(Ok(row))` for each row, or
 /// `Some(Err(e))` if an error occurs (including `UnexpectedEof` when more data
 /// is needed), or `None` when all rows have been decoded.
-/// 
+///
 /// The row data format depends on the image's color type:
 /// - Indexed: 1 byte per pixel (palette index)  
 /// - RGB: 3 bytes per pixel (R, G, B)
@@ -651,7 +651,7 @@ fn parse_file_header(buffer: &[u8; 14]) -> Result<u64, DecoderError> {
 
     // Data offset at offset 10-13
     let data_offset = u64::from(u32::from_le_bytes([
-        buffer[10], buffer[11], buffer[12], buffer[13]
+        buffer[10], buffer[11], buffer[12], buffer[13],
     ]));
 
     Ok(data_offset)
@@ -721,7 +721,7 @@ impl<R: BufRead + Seek> BmpDecoder<R> {
     }
 
     /// Create a new decoder that decodes from the stream ```r```.
-    /// 
+    ///
     /// For streaming sources (non-seekable), use `BmpDecoder::new_streaming` instead.
     pub fn new(reader: R) -> ImageResult<BmpDecoder<R>> {
         let mut decoder = Self::new_decoder(reader);
@@ -1544,16 +1544,16 @@ impl<R: BufRead + Seek> BmpDecoder<R> {
 // RLE compression is not supported in streaming mode.
 impl<R: BufRead> BmpDecoder<R> {
     /// Create a new streaming decoder that can handle incomplete data.
-    /// 
+    ///
     /// This decoder does not require the `Seek` trait and can be used with
     /// streaming sources where data arrives progressively (e.g., network streams,
     /// pipes, or partial file reads).
     ///
-    /// 
-    /// Creates a streaming decoder for non-seekable readers. Call `try_read_metadata()` 
+    ///
+    /// Creates a streaming decoder for non-seekable readers. Call `try_read_metadata()`
     /// to read headers, then `try_read_row()` or `into_rows()` to decode image data.
     /// Returns `Ok(None)` when more data is needed.
-    /// 
+    ///
     /// Supports all uncompressed formats. RLE4/RLE8 are not supported.
     pub fn new_streaming(reader: R) -> BmpDecoder<R> {
         BmpDecoder {
@@ -1578,9 +1578,9 @@ impl<R: BufRead> BmpDecoder<R> {
     }
 
     /// Returns the dimensions of the image after metadata has been read.
-    /// 
+    ///
     /// # Panics
-    /// 
+    ///
     /// Panics if called before successfully reading metadata with `try_read_metadata()`.
     pub fn dimensions(&self) -> (u32, u32) {
         if !self.has_loaded_metadata {
@@ -1590,9 +1590,9 @@ impl<R: BufRead> BmpDecoder<R> {
     }
 
     /// Returns the color type of the decoded image.
-    /// 
+    ///
     /// # Panics
-    /// 
+    ///
     /// Panics if called before successfully reading metadata with `try_read_metadata()`.
     pub fn color_type(&self) -> ColorType {
         if !self.has_loaded_metadata {
@@ -1608,11 +1608,11 @@ impl<R: BufRead> BmpDecoder<R> {
     }
 
     /// Returns the number of bytes per row in the decoded output.
-    /// 
+    ///
     /// This is width * channels (1 for indexed, 3 for RGB, 4 for RGBA).
-    /// 
+    ///
     /// # Panics
-    /// 
+    ///
     /// Panics if called before successfully reading metadata with `try_read_metadata()`.
     pub fn row_len(&self) -> usize {
         if !self.has_loaded_metadata {
@@ -1622,11 +1622,11 @@ impl<R: BufRead> BmpDecoder<R> {
     }
 
     /// Returns the total number of bytes needed to store the decoded image.
-    /// 
+    ///
     /// This is `row_len() * height`.
-    /// 
+    ///
     /// # Panics
-    /// 
+    ///
     /// Panics if called before successfully reading metadata with `try_read_metadata()`.
     pub fn output_buffer_size(&self) -> usize {
         if !self.has_loaded_metadata {
@@ -1636,12 +1636,12 @@ impl<R: BufRead> BmpDecoder<R> {
     }
 
     /// Returns whether the BMP format is supported for streaming.
-    /// 
+    ///
     /// RLE-compressed images (RLE4, RLE8) are not currently supported for streaming
     /// and will return `false`. All uncompressed formats return `true`.
-    /// 
+    ///
     /// # Panics
-    /// 
+    ///
     /// Panics if called before successfully reading metadata with `try_read_metadata()`.
     pub fn is_streaming_supported(&self) -> bool {
         if !self.has_loaded_metadata {
@@ -1651,7 +1651,7 @@ impl<R: BufRead> BmpDecoder<R> {
     }
 
     /// Returns an iterator over image rows for streaming decoding.
-    /// 
+    ///
     /// Each iteration attempts to read one row, returning `Err(IoError(UnexpectedEof))`
     /// when more data is needed. Call after successfully reading metadata.
     pub fn into_rows(&mut self) -> BmpRowIterator<'_, R> {
@@ -1698,7 +1698,9 @@ impl<R: BufRead> BmpDecoder<R> {
             return Ok(Some(()));
         }
 
-        let state = self.streaming_state.as_mut()
+        let state = self
+            .streaming_state
+            .as_mut()
             .expect("try_read_file_header called in non-streaming mode");
 
         match state {
@@ -1730,13 +1732,18 @@ impl<R: BufRead> BmpDecoder<R> {
 
                 Ok(Some(()))
             }
-            _ => panic!("try_read_file_header called in wrong state"),
+            _ => Err(ImageError::Decoding(DecodingError::new(
+                ImageFormat::Bmp.into(),
+                "Internal error: try_read_file_header called in wrong state",
+            ))),
         }
     }
 
     /// Try to read DIB header size (first 4 bytes of header).
     fn try_read_dib_header_size(&mut self) -> ImageResult<Option<u32>> {
-        let state = self.streaming_state.as_mut()
+        let state = self
+            .streaming_state
+            .as_mut()
             .expect("try_read_dib_header_size called in non-streaming mode");
 
         match state {
@@ -1749,9 +1756,7 @@ impl<R: BufRead> BmpDecoder<R> {
                 }
 
                 // Parse header size
-                let header_size = u32::from_le_bytes([
-                    buffer[0], buffer[1], buffer[2], buffer[3]
-                ]);
+                let header_size = u32::from_le_bytes([buffer[0], buffer[1], buffer[2], buffer[3]]);
 
                 // Validate header size
                 if header_size < BITMAPCOREHEADER_SIZE {
@@ -1760,17 +1765,26 @@ impl<R: BufRead> BmpDecoder<R> {
 
                 Ok(Some(header_size))
             }
-            _ => panic!("try_read_dib_header_size called in wrong state"),
+            _ => Err(ImageError::Decoding(DecodingError::new(
+                ImageFormat::Bmp.into(),
+                "Internal error: try_read_dib_header_size called in wrong state",
+            ))),
         }
     }
 
     /// Try to read complete DIB header body. Returns Ok(None) if insufficient data.
     fn try_read_dib_header(&mut self, header_size: u32) -> ImageResult<Option<()>> {
-        let state = self.streaming_state.as_mut()
+        let state = self
+            .streaming_state
+            .as_mut()
             .expect("try_read_dib_header called in non-streaming mode");
 
         match state {
-            DecoderState::ReadingDibHeader { header_size: size, bytes_read, buffer } => {
+            DecoderState::ReadingDibHeader {
+                header_size: size,
+                bytes_read,
+                buffer,
+            } => {
                 // Total bytes needed (including the 4-byte size already read)
                 let total_bytes = *size as usize;
 
@@ -1789,7 +1803,10 @@ impl<R: BufRead> BmpDecoder<R> {
 
                 Ok(Some(()))
             }
-            _ => panic!("try_read_dib_header called in wrong state"),
+            _ => Err(ImageError::Decoding(DecodingError::new(
+                ImageFormat::Bmp.into(),
+                "Internal error: try_read_dib_header called in wrong state",
+            ))),
         }
     }
 
@@ -1827,7 +1844,7 @@ impl<R: BufRead> BmpDecoder<R> {
         if buffer.len() < 8 {
             return Err(ImageError::IoError(io::Error::new(
                 io::ErrorKind::UnexpectedEof,
-                "Incomplete CORE header"
+                "Incomplete CORE header",
             )));
         }
 
@@ -1874,7 +1891,7 @@ impl<R: BufRead> BmpDecoder<R> {
         if buffer.len() < 36 {
             return Err(ImageError::IoError(io::Error::new(
                 io::ErrorKind::UnexpectedEof,
-                "Incomplete INFO header"
+                "Incomplete INFO header",
             )));
         }
 
@@ -1999,15 +2016,17 @@ impl<R: BufRead> BmpDecoder<R> {
 
     /// Try to read palette. Returns Ok(None) if insufficient data.
     fn try_read_palette(&mut self) -> ImageResult<Option<()>> {
-        let state = self.streaming_state.as_mut()
+        let state = self
+            .streaming_state
+            .as_mut()
             .expect("try_read_palette called in non-streaming mode");
 
         match state {
-            DecoderState::ReadingPalette { 
-                entries_read, 
-                total_entries, 
+            DecoderState::ReadingPalette {
+                entries_read,
+                total_entries,
                 bytes_per_color,
-                buffer 
+                buffer,
             } => {
                 const MAX_PALETTE_SIZE: usize = 256;
 
@@ -2058,17 +2077,26 @@ impl<R: BufRead> BmpDecoder<R> {
                 self.palette = Some(p);
                 Ok(Some(()))
             }
-            _ => panic!("try_read_palette called in wrong state"),
+            _ => Err(ImageError::Decoding(DecodingError::new(
+                ImageFormat::Bmp.into(),
+                "Internal error: try_read_palette called in wrong state",
+            ))),
         }
     }
 
     /// Try to read bitmasks. Returns Ok(None) if insufficient data.
     fn try_read_bitmasks(&mut self) -> ImageResult<Option<()>> {
-        let state = self.streaming_state.as_mut()
+        let state = self
+            .streaming_state
+            .as_mut()
             .expect("try_read_bitmasks called in non-streaming mode");
 
         match state {
-            DecoderState::ReadingBitmasks { bytes_read, total_bytes, buffer } => {
+            DecoderState::ReadingBitmasks {
+                bytes_read,
+                total_bytes,
+                buffer,
+            } => {
                 // Read remaining bytes
                 while *bytes_read < *total_bytes {
                     let available = self.reader.fill_buf()?;
@@ -2109,23 +2137,28 @@ impl<R: BufRead> BmpDecoder<R> {
 
                 Ok(Some(()))
             }
-            _ => panic!("try_read_bitmasks called in wrong state"),
+            _ => Err(ImageError::Decoding(DecodingError::new(
+                ImageFormat::Bmp.into(),
+                "Internal error: try_read_bitmasks called in wrong state",
+            ))),
         }
     }
 
     /// Attempts to read BMP metadata from the stream.
-    /// 
+    ///
     /// Reads file header, DIB header, palette, and bitmasks in a resumable manner.
     /// Call repeatedly until it returns `Ok(Some(()))`.
-    /// 
+    ///
     /// # Returns
-    /// 
+    ///
     /// - `Ok(Some(()))` - Metadata complete
     /// - `Ok(None)` - Need more data
     /// - `Err(e)` - Invalid format or corruption
     pub fn try_read_metadata(&mut self) -> ImageResult<Option<()>> {
         loop {
-            let state_clone = self.streaming_state.clone()
+            let state_clone = self
+                .streaming_state
+                .clone()
                 .expect("try_read_metadata called in non-streaming mode");
 
             match state_clone {
@@ -2136,12 +2169,10 @@ impl<R: BufRead> BmpDecoder<R> {
                         None => return Ok(None),
                     }
                 }
-                DecoderState::ReadingFileHeader { .. } => {
-                    match self.try_read_file_header()? {
-                        Some(()) => continue,
-                        None => return Ok(None),
-                    }
-                }
+                DecoderState::ReadingFileHeader { .. } => match self.try_read_file_header()? {
+                    Some(()) => continue,
+                    None => return Ok(None),
+                },
                 DecoderState::ReadingDibHeaderSize { .. } => {
                     match self.try_read_dib_header_size()? {
                         Some(header_size) => {
@@ -2169,13 +2200,17 @@ impl<R: BufRead> BmpDecoder<R> {
                                         entries_read: 0,
                                         total_entries: palette_size as u32,
                                         bytes_per_color,
-                                        buffer: vec_try_with_capacity(palette_size * bytes_per_color)?,
+                                        buffer: vec_try_with_capacity(
+                                            palette_size * bytes_per_color,
+                                        )?,
                                     });
                                 }
                                 ImageType::Bitfields16 | ImageType::Bitfields32 => {
                                     // Need to read bitmasks
                                     let mask_bytes = match self.bmp_header_type {
-                                        BMPHeaderType::V3 | BMPHeaderType::V4 | BMPHeaderType::V5 => 16,
+                                        BMPHeaderType::V3
+                                        | BMPHeaderType::V4
+                                        | BMPHeaderType::V5 => 16,
                                         _ => 12,
                                     };
                                     self.streaming_state = Some(DecoderState::ReadingBitmasks {
@@ -2235,7 +2270,7 @@ impl<R: BufRead> BmpDecoder<R> {
                     // Shouldn't reach here during metadata reading
                     return Err(ImageError::Decoding(DecodingError::new(
                         ImageFormat::Bmp.into(),
-                        "Invalid state during metadata reading"
+                        "Invalid state during metadata reading",
                     )));
                 }
             }
@@ -2270,12 +2305,12 @@ impl<R: BufRead> BmpDecoder<R> {
     }
 
     /// Attempts to read one row of decoded pixel data.
-    /// 
+    ///
     /// Reads and decodes the next row in top-to-bottom order. The output buffer
     /// must be exactly `row_len()` bytes.
-    /// 
+    ///
     /// # Returns
-    /// 
+    ///
     /// - `Ok(Some(()))` - Row successfully decoded
     /// - `Ok(None)` - Need more data
     /// - `Err(e)` - Error (wrong buffer size, unsupported format, etc.)
@@ -2285,11 +2320,16 @@ impl<R: BufRead> BmpDecoder<R> {
 
         // Check current state and determine what to do
         let action = {
-            let state = self.streaming_state.as_mut()
+            let state = self
+                .streaming_state
+                .as_mut()
                 .expect("try_read_row called in non-streaming mode");
 
             match state {
-                DecoderState::ReadyForPixelData { current_row, row_byte_length } => {
+                DecoderState::ReadyForPixelData {
+                    current_row,
+                    row_byte_length,
+                } => {
                     // Initialize row_byte_length if not set
                     if *row_byte_length == 0 {
                         *row_byte_length = calculated_row_length;
@@ -2313,7 +2353,11 @@ impl<R: BufRead> BmpDecoder<R> {
                     // Indicate we should recursively call
                     Some(None)
                 }
-                DecoderState::ReadingPixelRow { row_index, bytes_read, row_buffer } => {
+                DecoderState::ReadingPixelRow {
+                    row_index,
+                    bytes_read,
+                    row_buffer,
+                } => {
                     let row_byte_length = calculated_row_length;
 
                     // Read remaining bytes for this row
@@ -2343,7 +2387,7 @@ impl<R: BufRead> BmpDecoder<R> {
                 _ => {
                     return Err(ImageError::Decoding(DecodingError::new(
                         ImageFormat::Bmp.into(),
-                        "try_read_row called in invalid state (metadata not loaded?)"
+                        "try_read_row called in invalid state (metadata not loaded?)",
                     )));
                 }
             }
@@ -2376,7 +2420,15 @@ impl<R: BufRead> BmpDecoder<R> {
 
     /// Helper macro to write RGB(A) pixel to output buffer
     #[inline(always)]
-    fn write_rgb_pixel(output: &mut [u8], out_idx: &mut usize, r: u8, g: u8, b: u8, a: u8, num_channels: usize) {
+    fn write_rgb_pixel(
+        output: &mut [u8],
+        out_idx: &mut usize,
+        r: u8,
+        g: u8,
+        b: u8,
+        a: u8,
+        num_channels: usize,
+    ) {
         output[*out_idx] = r;
         output[*out_idx + 1] = g;
         output[*out_idx + 2] = b;
@@ -2396,7 +2448,11 @@ impl<R: BufRead> BmpDecoder<R> {
         if output.len() != expected_output_len {
             return Err(ImageError::Decoding(DecodingError::new(
                 ImageFormat::Bmp.into(),
-                format!("Output buffer size mismatch: expected {}, got {}", expected_output_len, output.len())
+                format!(
+                    "Output buffer size mismatch: expected {}, got {}",
+                    expected_output_len,
+                    output.len()
+                ),
             )));
         }
 
@@ -2443,11 +2499,12 @@ impl<R: BufRead> BmpDecoder<R> {
             }
             ImageType::Palette => {
                 // Paletted: bit-packed indices that need unpacking
-                let palette = self.palette.as_ref()
-                    .ok_or_else(|| ImageError::Decoding(DecodingError::new(
+                let palette = self.palette.as_ref().ok_or_else(|| {
+                    ImageError::Decoding(DecodingError::new(
                         ImageFormat::Bmp.into(),
-                        "Palette missing for paletted image"
-                    )))?;
+                        "Palette missing for paletted image",
+                    ))
+                })?;
 
                 if self.indexed_color {
                     // Just copy indices directly
@@ -2459,24 +2516,52 @@ impl<R: BufRead> BmpDecoder<R> {
                         8 => {
                             for &idx in &row_data[..width] {
                                 let rgb = palette[idx as usize];
-                                Self::write_rgb_pixel(output, &mut out_idx, rgb[0], rgb[1], rgb[2], 0xFF, num_channels);
+                                Self::write_rgb_pixel(
+                                    output,
+                                    &mut out_idx,
+                                    rgb[0],
+                                    rgb[1],
+                                    rgb[2],
+                                    0xFF,
+                                    num_channels,
+                                );
                             }
                         }
                         4 => {
                             let mut pixel_count = 0;
                             for &byte in row_data.iter() {
-                                if pixel_count >= width { break; }
+                                if pixel_count >= width {
+                                    break;
+                                }
 
                                 // High nibble
                                 let rgb1 = palette[(byte >> 4) as usize];
-                                Self::write_rgb_pixel(output, &mut out_idx, rgb1[0], rgb1[1], rgb1[2], 0xFF, num_channels);
+                                Self::write_rgb_pixel(
+                                    output,
+                                    &mut out_idx,
+                                    rgb1[0],
+                                    rgb1[1],
+                                    rgb1[2],
+                                    0xFF,
+                                    num_channels,
+                                );
                                 pixel_count += 1;
 
-                                if pixel_count >= width { break; }
+                                if pixel_count >= width {
+                                    break;
+                                }
 
                                 // Low nibble
                                 let rgb2 = palette[(byte & 0x0F) as usize];
-                                Self::write_rgb_pixel(output, &mut out_idx, rgb2[0], rgb2[1], rgb2[2], 0xFF, num_channels);
+                                Self::write_rgb_pixel(
+                                    output,
+                                    &mut out_idx,
+                                    rgb2[0],
+                                    rgb2[1],
+                                    rgb2[2],
+                                    0xFF,
+                                    num_channels,
+                                );
                                 pixel_count += 1;
                             }
                         }
@@ -2484,14 +2569,26 @@ impl<R: BufRead> BmpDecoder<R> {
                             // 2-bit palette: 4 pixels per byte
                             let mut pixel_count = 0;
                             for &byte in row_data.iter() {
-                                if pixel_count >= width { break; }
+                                if pixel_count >= width {
+                                    break;
+                                }
 
                                 // Process 4 pixels from this byte (2 bits each)
                                 for shift in [6, 4, 2, 0] {
-                                    if pixel_count >= width { break; }
+                                    if pixel_count >= width {
+                                        break;
+                                    }
 
                                     let rgb = palette[((byte >> shift) & 0b11) as usize];
-                                    Self::write_rgb_pixel(output, &mut out_idx, rgb[0], rgb[1], rgb[2], 0xFF, num_channels);
+                                    Self::write_rgb_pixel(
+                                        output,
+                                        &mut out_idx,
+                                        rgb[0],
+                                        rgb[1],
+                                        rgb[2],
+                                        0xFF,
+                                        num_channels,
+                                    );
                                     pixel_count += 1;
                                 }
                             }
@@ -2500,14 +2597,26 @@ impl<R: BufRead> BmpDecoder<R> {
                             // 1-bit palette: 8 pixels per byte (monochrome)
                             let mut pixel_count = 0;
                             for &byte in row_data.iter() {
-                                if pixel_count >= width { break; }
+                                if pixel_count >= width {
+                                    break;
+                                }
 
                                 // Process 8 pixels from this byte (1 bit each)
                                 for bit_pos in (0..8).rev() {
-                                    if pixel_count >= width { break; }
+                                    if pixel_count >= width {
+                                        break;
+                                    }
 
                                     let rgb = palette[((byte >> bit_pos) & 1) as usize];
-                                    Self::write_rgb_pixel(output, &mut out_idx, rgb[0], rgb[1], rgb[2], 0xFF, num_channels);
+                                    Self::write_rgb_pixel(
+                                        output,
+                                        &mut out_idx,
+                                        rgb[0],
+                                        rgb[1],
+                                        rgb[2],
+                                        0xFF,
+                                        num_channels,
+                                    );
                                     pixel_count += 1;
                                 }
                             }
@@ -2515,7 +2624,7 @@ impl<R: BufRead> BmpDecoder<R> {
                         _ => {
                             return Err(ImageError::Decoding(DecodingError::new(
                                 ImageFormat::Bmp.into(),
-                                format!("Invalid bit count: {}", self.bit_count)
+                                format!("Invalid bit count: {}", self.bit_count),
                             )));
                         }
                     }
@@ -2527,7 +2636,8 @@ impl<R: BufRead> BmpDecoder<R> {
                 for pixel_idx in 0..width {
                     let in_idx = pixel_idx * 2;
                     if in_idx + 1 < row_data.len() {
-                        let data = u32::from(u16::from_le_bytes([row_data[in_idx], row_data[in_idx + 1]]));
+                        let data =
+                            u32::from(u16::from_le_bytes([row_data[in_idx], row_data[in_idx + 1]]));
                         let r = R5_G5_B5_COLOR_MASK.r.read(data);
                         let g = R5_G5_B5_COLOR_MASK.g.read(data);
                         let b = R5_G5_B5_COLOR_MASK.b.read(data);
@@ -2537,32 +2647,39 @@ impl<R: BufRead> BmpDecoder<R> {
             }
             ImageType::Bitfields16 => {
                 // Bitfields16: 2 bytes per pixel with custom masks, with row padding
-                let bitfields = self.bitfields.as_ref()
-                    .ok_or_else(|| ImageError::Decoding(DecodingError::new(
+                let bitfields = self.bitfields.as_ref().ok_or_else(|| {
+                    ImageError::Decoding(DecodingError::new(
                         ImageFormat::Bmp.into(),
-                        "Bitfields missing for Bitfields16 image"
-                    )))?;
+                        "Bitfields missing for Bitfields16 image",
+                    ))
+                })?;
 
                 let mut out_idx = 0;
                 for pixel_idx in 0..width {
                     let in_idx = pixel_idx * 2;
                     if in_idx + 1 < row_data.len() {
-                        let data = u32::from(u16::from_le_bytes([row_data[in_idx], row_data[in_idx + 1]]));
+                        let data =
+                            u32::from(u16::from_le_bytes([row_data[in_idx], row_data[in_idx + 1]]));
                         let r = bitfields.r.read(data);
                         let g = bitfields.g.read(data);
                         let b = bitfields.b.read(data);
-                        let a = if bitfields.a.len != 0 { bitfields.a.read(data) } else { 0xFF };
+                        let a = if bitfields.a.len != 0 {
+                            bitfields.a.read(data)
+                        } else {
+                            0xFF
+                        };
                         Self::write_rgb_pixel(output, &mut out_idx, r, g, b, a, num_channels);
                     }
                 }
             }
             ImageType::Bitfields32 => {
                 // Bitfields32: 4 bytes per pixel with custom masks
-                let bitfields = self.bitfields.as_ref()
-                    .ok_or_else(|| ImageError::Decoding(DecodingError::new(
+                let bitfields = self.bitfields.as_ref().ok_or_else(|| {
+                    ImageError::Decoding(DecodingError::new(
                         ImageFormat::Bmp.into(),
-                        "Bitfields missing for Bitfields32 image"
-                    )))?;
+                        "Bitfields missing for Bitfields32 image",
+                    ))
+                })?;
 
                 let mut out_idx = 0;
                 for pixel_idx in 0..width {
@@ -2577,7 +2694,11 @@ impl<R: BufRead> BmpDecoder<R> {
                         let r = bitfields.r.read(data);
                         let g = bitfields.g.read(data);
                         let b = bitfields.b.read(data);
-                        let a = if bitfields.a.len != 0 { bitfields.a.read(data) } else { 0xFF };
+                        let a = if bitfields.a.len != 0 {
+                            bitfields.a.read(data)
+                        } else {
+                            0xFF
+                        };
                         Self::write_rgb_pixel(output, &mut out_idx, r, g, b, a, num_channels);
                     }
                 }
@@ -2587,7 +2708,7 @@ impl<R: BufRead> BmpDecoder<R> {
                     UnsupportedError::from_format_and_kind(
                         ImageFormat::Bmp.into(),
                         UnsupportedErrorKind::GenericFeature(
-                            "RLE streaming not yet implemented".to_string()
+                            "RLE streaming not yet implemented".to_string(),
                         ),
                     ),
                 ));
@@ -2665,16 +2786,16 @@ mod test {
 
         // DIB header (BITMAPINFOHEADER, 40 bytes)
         bmp_data.extend_from_slice(&40u32.to_le_bytes()); // Header size
-        bmp_data.extend_from_slice(&2i32.to_le_bytes());  // Width: 2
-        bmp_data.extend_from_slice(&2i32.to_le_bytes());  // Height: 2 (bottom-up)
-        bmp_data.extend_from_slice(&1u16.to_le_bytes());  // Planes: 1
-        bmp_data.extend_from_slice(&8u16.to_le_bytes());  // Bits per pixel: 8
-        bmp_data.extend_from_slice(&0u32.to_le_bytes());  // Compression: none
-        bmp_data.extend_from_slice(&8u32.to_le_bytes());  // Image size: 8 bytes (2 rows * 4 bytes padded)
-        bmp_data.extend_from_slice(&0i32.to_le_bytes());  // X pixels per meter
-        bmp_data.extend_from_slice(&0i32.to_le_bytes());  // Y pixels per meter
-        bmp_data.extend_from_slice(&4u32.to_le_bytes());  // Colors in palette: 4
-        bmp_data.extend_from_slice(&0u32.to_le_bytes());  // Important colors: 0 (all)
+        bmp_data.extend_from_slice(&2i32.to_le_bytes()); // Width: 2
+        bmp_data.extend_from_slice(&2i32.to_le_bytes()); // Height: 2 (bottom-up)
+        bmp_data.extend_from_slice(&1u16.to_le_bytes()); // Planes: 1
+        bmp_data.extend_from_slice(&8u16.to_le_bytes()); // Bits per pixel: 8
+        bmp_data.extend_from_slice(&0u32.to_le_bytes()); // Compression: none
+        bmp_data.extend_from_slice(&8u32.to_le_bytes()); // Image size: 8 bytes (2 rows * 4 bytes padded)
+        bmp_data.extend_from_slice(&0i32.to_le_bytes()); // X pixels per meter
+        bmp_data.extend_from_slice(&0i32.to_le_bytes()); // Y pixels per meter
+        bmp_data.extend_from_slice(&4u32.to_le_bytes()); // Colors in palette: 4
+        bmp_data.extend_from_slice(&0u32.to_le_bytes()); // Important colors: 0 (all)
 
         // Color palette (4 colors * 4 bytes = 16 bytes) - stored as BGRA
         bmp_data.extend_from_slice(&[0x00, 0x00, 0xFF, 0x00]); // Red
@@ -2729,16 +2850,16 @@ mod test {
 
         // DIB header (BITMAPINFOHEADER, 40 bytes)
         bmp_data.extend_from_slice(&40u32.to_le_bytes()); // Header size
-        bmp_data.extend_from_slice(&2i32.to_le_bytes());  // Width: 2
-        bmp_data.extend_from_slice(&2i32.to_le_bytes());  // Height: 2 (bottom-up)
-        bmp_data.extend_from_slice(&1u16.to_le_bytes());  // Planes: 1
+        bmp_data.extend_from_slice(&2i32.to_le_bytes()); // Width: 2
+        bmp_data.extend_from_slice(&2i32.to_le_bytes()); // Height: 2 (bottom-up)
+        bmp_data.extend_from_slice(&1u16.to_le_bytes()); // Planes: 1
         bmp_data.extend_from_slice(&16u16.to_le_bytes()); // Bits per pixel: 16
-        bmp_data.extend_from_slice(&0u32.to_le_bytes());  // Compression: none (BI_RGB)
+        bmp_data.extend_from_slice(&0u32.to_le_bytes()); // Compression: none (BI_RGB)
         bmp_data.extend_from_slice(&16u32.to_le_bytes()); // Image size: 16 bytes (2 rows * 8 bytes)
-        bmp_data.extend_from_slice(&0i32.to_le_bytes());  // X pixels per meter
-        bmp_data.extend_from_slice(&0i32.to_le_bytes());  // Y pixels per meter
-        bmp_data.extend_from_slice(&0u32.to_le_bytes());  // Colors in palette: 0
-        bmp_data.extend_from_slice(&0u32.to_le_bytes());  // Important colors: 0
+        bmp_data.extend_from_slice(&0i32.to_le_bytes()); // X pixels per meter
+        bmp_data.extend_from_slice(&0i32.to_le_bytes()); // Y pixels per meter
+        bmp_data.extend_from_slice(&0u32.to_le_bytes()); // Colors in palette: 0
+        bmp_data.extend_from_slice(&0u32.to_le_bytes()); // Important colors: 0
 
         // Pixel data (bottom-up, so bottom row first)
         // Each row is 4 bytes (2 pixels * 2 bytes), already 4-byte aligned
@@ -2790,16 +2911,16 @@ mod test {
 
         // DIB header (BITMAPINFOHEADER, 40 bytes)
         bmp_data.extend_from_slice(&40u32.to_le_bytes()); // Header size
-        bmp_data.extend_from_slice(&8i32.to_le_bytes());  // Width: 8
-        bmp_data.extend_from_slice(&2i32.to_le_bytes());  // Height: 2 (bottom-up)
-        bmp_data.extend_from_slice(&1u16.to_le_bytes());  // Planes: 1
-        bmp_data.extend_from_slice(&1u16.to_le_bytes());  // Bits per pixel: 1
-        bmp_data.extend_from_slice(&0u32.to_le_bytes());  // Compression: none
-        bmp_data.extend_from_slice(&8u32.to_le_bytes());  // Image size: 8 bytes (2 rows * 4 bytes padded)
-        bmp_data.extend_from_slice(&0i32.to_le_bytes());  // X pixels per meter
-        bmp_data.extend_from_slice(&0i32.to_le_bytes());  // Y pixels per meter
-        bmp_data.extend_from_slice(&2u32.to_le_bytes());  // Colors in palette: 2
-        bmp_data.extend_from_slice(&0u32.to_le_bytes());  // Important colors: 0 (all)
+        bmp_data.extend_from_slice(&8i32.to_le_bytes()); // Width: 8
+        bmp_data.extend_from_slice(&2i32.to_le_bytes()); // Height: 2 (bottom-up)
+        bmp_data.extend_from_slice(&1u16.to_le_bytes()); // Planes: 1
+        bmp_data.extend_from_slice(&1u16.to_le_bytes()); // Bits per pixel: 1
+        bmp_data.extend_from_slice(&0u32.to_le_bytes()); // Compression: none
+        bmp_data.extend_from_slice(&8u32.to_le_bytes()); // Image size: 8 bytes (2 rows * 4 bytes padded)
+        bmp_data.extend_from_slice(&0i32.to_le_bytes()); // X pixels per meter
+        bmp_data.extend_from_slice(&0i32.to_le_bytes()); // Y pixels per meter
+        bmp_data.extend_from_slice(&2u32.to_le_bytes()); // Colors in palette: 2
+        bmp_data.extend_from_slice(&0u32.to_le_bytes()); // Important colors: 0 (all)
 
         // Color palette (2 colors * 4 bytes = 8 bytes) - stored as BGRA
         bmp_data.extend_from_slice(&[0x00, 0x00, 0x00, 0x00]); // Black
@@ -2871,16 +2992,16 @@ mod test {
 
         // DIB header (BITMAPINFOHEADER, 40 bytes)
         bmp_data.extend_from_slice(&40u32.to_le_bytes()); // Header size
-        bmp_data.extend_from_slice(&4i32.to_le_bytes());  // Width: 4
-        bmp_data.extend_from_slice(&2i32.to_le_bytes());  // Height: 2 (bottom-up)
-        bmp_data.extend_from_slice(&1u16.to_le_bytes());  // Planes: 1
-        bmp_data.extend_from_slice(&2u16.to_le_bytes());  // Bits per pixel: 2
-        bmp_data.extend_from_slice(&0u32.to_le_bytes());  // Compression: none
-        bmp_data.extend_from_slice(&8u32.to_le_bytes());  // Image size: 8 bytes (2 rows * 4 bytes padded)
-        bmp_data.extend_from_slice(&0i32.to_le_bytes());  // X pixels per meter
-        bmp_data.extend_from_slice(&0i32.to_le_bytes());  // Y pixels per meter
-        bmp_data.extend_from_slice(&4u32.to_le_bytes());  // Colors in palette: 4
-        bmp_data.extend_from_slice(&0u32.to_le_bytes());  // Important colors: 0 (all)
+        bmp_data.extend_from_slice(&4i32.to_le_bytes()); // Width: 4
+        bmp_data.extend_from_slice(&2i32.to_le_bytes()); // Height: 2 (bottom-up)
+        bmp_data.extend_from_slice(&1u16.to_le_bytes()); // Planes: 1
+        bmp_data.extend_from_slice(&2u16.to_le_bytes()); // Bits per pixel: 2
+        bmp_data.extend_from_slice(&0u32.to_le_bytes()); // Compression: none
+        bmp_data.extend_from_slice(&8u32.to_le_bytes()); // Image size: 8 bytes (2 rows * 4 bytes padded)
+        bmp_data.extend_from_slice(&0i32.to_le_bytes()); // X pixels per meter
+        bmp_data.extend_from_slice(&0i32.to_le_bytes()); // Y pixels per meter
+        bmp_data.extend_from_slice(&4u32.to_le_bytes()); // Colors in palette: 4
+        bmp_data.extend_from_slice(&0u32.to_le_bytes()); // Important colors: 0 (all)
 
         // Color palette (4 colors * 4 bytes = 16 bytes) - stored as BGRA
         bmp_data.extend_from_slice(&[0x00, 0x00, 0x00, 0x00]); // Black
@@ -3014,7 +3135,7 @@ mod test {
         // Verify streaming state is initialized
         assert!(decoder.streaming_state.is_some());
         match decoder.streaming_state {
-            Some(DecoderState::Initial) => { /* Expected */ },
+            Some(DecoderState::Initial) => { /* Expected */ }
             _ => panic!("Expected Initial state"),
         }
     }
@@ -3031,7 +3152,7 @@ mod test {
         // Try to read file header - should return None (need more data)
         let result = decoder.try_read_file_header();
         match result {
-            Ok(None) => { /* Expected - need more data */ },
+            Ok(None) => { /* Expected - need more data */ }
             Ok(Some(())) => panic!("Should not succeed with incomplete data"),
             Err(e) => {
                 // Also acceptable if it returns UnexpectedEof
@@ -3050,23 +3171,23 @@ mod test {
         let mut data = Vec::new();
 
         // File header (14 bytes)
-        data.extend_from_slice(b"BM");           // Signature
+        data.extend_from_slice(b"BM"); // Signature
         data.extend_from_slice(&70u32.to_le_bytes()); // File size
-        data.extend_from_slice(&0u32.to_le_bytes());  // Reserved
+        data.extend_from_slice(&0u32.to_le_bytes()); // Reserved
         data.extend_from_slice(&54u32.to_le_bytes()); // Data offset
 
         // DIB header (BITMAPINFOHEADER, 40 bytes)
-        data.extend_from_slice(&40u32.to_le_bytes());  // Header size
-        data.extend_from_slice(&1i32.to_le_bytes());   // Width
-        data.extend_from_slice(&1i32.to_le_bytes());   // Height
-        data.extend_from_slice(&1u16.to_le_bytes());   // Planes
-        data.extend_from_slice(&24u16.to_le_bytes());  // Bit count
-        data.extend_from_slice(&0u32.to_le_bytes());   // Compression (none)
-        data.extend_from_slice(&16u32.to_le_bytes());  // Image size
-        data.extend_from_slice(&0i32.to_le_bytes());   // X pixels per meter
-        data.extend_from_slice(&0i32.to_le_bytes());   // Y pixels per meter
-        data.extend_from_slice(&0u32.to_le_bytes());   // Colors used
-        data.extend_from_slice(&0u32.to_le_bytes());   // Colors important
+        data.extend_from_slice(&40u32.to_le_bytes()); // Header size
+        data.extend_from_slice(&1i32.to_le_bytes()); // Width
+        data.extend_from_slice(&1i32.to_le_bytes()); // Height
+        data.extend_from_slice(&1u16.to_le_bytes()); // Planes
+        data.extend_from_slice(&24u16.to_le_bytes()); // Bit count
+        data.extend_from_slice(&0u32.to_le_bytes()); // Compression (none)
+        data.extend_from_slice(&16u32.to_le_bytes()); // Image size
+        data.extend_from_slice(&0i32.to_le_bytes()); // X pixels per meter
+        data.extend_from_slice(&0i32.to_le_bytes()); // Y pixels per meter
+        data.extend_from_slice(&0u32.to_le_bytes()); // Colors used
+        data.extend_from_slice(&0u32.to_le_bytes()); // Colors important
 
         // Pixel data (1 pixel RGB + padding to 4-byte boundary = 4 bytes)
         data.extend_from_slice(&[255u8, 0, 0, 0]); // Blue pixel with padding
@@ -3143,7 +3264,10 @@ mod test {
             }
         }
 
-        let reader = OneByteReader { data: data.clone(), pos: 0 };
+        let reader = OneByteReader {
+            data: data.clone(),
+            pos: 0,
+        };
         let mut decoder = BmpDecoder::new_streaming(reader);
 
         // Keep trying until metadata is complete
@@ -3173,22 +3297,22 @@ mod test {
         data.extend_from_slice(&54u32.to_le_bytes()); // Data offset
 
         // DIB header
-        data.extend_from_slice(&40u32.to_le_bytes());  // Header size
-        data.extend_from_slice(&2i32.to_le_bytes());   // Width: 2
-        data.extend_from_slice(&2i32.to_le_bytes());   // Height: 2
-        data.extend_from_slice(&1u16.to_le_bytes());   // Planes
-        data.extend_from_slice(&24u16.to_le_bytes());  // Bit count
-        data.extend_from_slice(&0u32.to_le_bytes());   // Compression
-        data.extend_from_slice(&28u32.to_le_bytes());  // Image size
-        data.extend_from_slice(&0i32.to_le_bytes());   // X pixels/m
-        data.extend_from_slice(&0i32.to_le_bytes());   // Y pixels/m
-        data.extend_from_slice(&0u32.to_le_bytes());   // Colors used
-        data.extend_from_slice(&0u32.to_le_bytes());   // Colors important
+        data.extend_from_slice(&40u32.to_le_bytes()); // Header size
+        data.extend_from_slice(&2i32.to_le_bytes()); // Width: 2
+        data.extend_from_slice(&2i32.to_le_bytes()); // Height: 2
+        data.extend_from_slice(&1u16.to_le_bytes()); // Planes
+        data.extend_from_slice(&24u16.to_le_bytes()); // Bit count
+        data.extend_from_slice(&0u32.to_le_bytes()); // Compression
+        data.extend_from_slice(&28u32.to_le_bytes()); // Image size
+        data.extend_from_slice(&0i32.to_le_bytes()); // X pixels/m
+        data.extend_from_slice(&0i32.to_le_bytes()); // Y pixels/m
+        data.extend_from_slice(&0u32.to_le_bytes()); // Colors used
+        data.extend_from_slice(&0u32.to_le_bytes()); // Colors important
 
         // Pixel data (2x2 = 4 pixels, bottom-up)
         // Row 0 (bottom): [Red, Green] + 2 bytes padding
         data.extend_from_slice(&[0, 0, 255, 0, 255, 0, 0, 0]); // BGR, BGR, padding
-        // Row 1 (top): [Blue, White] + 2 bytes padding  
+                                                               // Row 1 (top): [Blue, White] + 2 bytes padding
         data.extend_from_slice(&[255, 0, 0, 255, 255, 255, 0, 0]); // BGR, BGR, padding
 
         let cursor = Cursor::new(data);
@@ -3212,7 +3336,7 @@ mod test {
 
         // Read first row (bottom row: Red, Green)
         match decoder.try_read_row(&mut row_buffer) {
-            Ok(Some(())) => {},
+            Ok(Some(())) => {}
             Ok(None) => panic!("Expected complete row"),
             Err(e) => panic!("Row read failed: {:?}", e),
         }
@@ -3221,7 +3345,7 @@ mod test {
 
         // Read second row (top row: Blue, White)
         match decoder.try_read_row(&mut row_buffer) {
-            Ok(Some(())) => {},
+            Ok(Some(())) => {}
             Ok(None) => panic!("Expected complete row"),
             Err(e) => panic!("Row read failed: {:?}", e),
         }
@@ -3230,7 +3354,7 @@ mod test {
 
         // Try to read one more - should indicate completion
         match decoder.try_read_row(&mut row_buffer) {
-            Ok(Some(())) => {}, // Complete is OK
+            Ok(Some(())) => {} // Complete is OK
             Ok(None) => panic!("Should not need more data after all rows"),
             Err(e) => panic!("Unexpected error: {:?}", e),
         }
@@ -3243,4 +3367,3 @@ mod test {
         eprintln!("Test completed!");
     }
 }
-
