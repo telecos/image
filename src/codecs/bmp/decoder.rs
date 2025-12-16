@@ -2145,6 +2145,11 @@ impl<R: BufRead> BmpDecoder<R> {
     /// Read BMP metadata incrementally. Call until `Ok(Some(()))` returned.
     ///
     /// Returns `Ok(Some(()))` when complete, `Ok(None)` if more data needed.
+    /// Returns whether metadata has been fully loaded
+    pub fn has_loaded_metadata(&self) -> bool {
+        self.has_loaded_metadata
+    }
+
     pub fn try_read_metadata(&mut self) -> ImageResult<Option<()>> {
         loop {
             let state_clone = self
