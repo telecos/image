@@ -78,6 +78,11 @@ const MAX_WIDTH_HEIGHT: i32 = 0xFFFF;
 /// The value of the V5 header field indicating an embedded ICC profile ("MBED").
 const PROFILE_EMBEDDED: u32 = 0x4D424544;
 
+/// Maximum size for an embedded ICC profile (16 MB).
+/// This prevents malicious files from causing excessive memory allocation.
+/// Legitimate ICC profiles are typically a few KB to a few hundred KB.
+const MAX_ICC_PROFILE_SIZE: u32 = 16 * 1024 * 1024;
+
 /// Parsed BITMAPCOREHEADER fields (excludes 4-byte size field).
 struct ParsedCoreHeader {
     width: i32,
@@ -238,6 +243,11 @@ impl ParsedIccProfile {
         let profile_size = u32::from_le_bytes(buffer[112..116].try_into().unwrap());
 
         if profile_size == 0 || profile_offset == 0 {
+            return None;
+        }
+
+        // Validate profile size to prevent excessive memory allocation
+        if profile_size > MAX_ICC_PROFILE_SIZE {
             return None;
         }
 
