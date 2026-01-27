@@ -1150,16 +1150,6 @@ impl<R: BufRead + Seek> BmpDecoder<R> {
             _ => return Ok(()), // Already past metadata phase
         };
 
-        if progress == MetadataProgress::Complete {
-            // Metadata complete, transition to image reading state
-            self.state = if self.is_rle() {
-                DecoderState::ReadingRleData
-            } else {
-                DecoderState::ReadingRowData { rows_decoded: 0 }
-            };
-            return Ok(());
-        }
-
         match self.read_metadata_impl(progress) {
             Ok(()) => {
                 // Transition directly to the appropriate image reading state
@@ -1180,7 +1170,7 @@ impl<R: BufRead + Seek> BmpDecoder<R> {
     /// - Succeeds and calls the next phase
     /// - Fails with an error (which may be retryable like UnexpectedEof)
     ///
-    /// Recursion depth is bounded (max 3): NotStarted → ReadingPalette → ReadingIccProfile → Complete
+    /// Recursion depth is bounded (max 4): NotStarted → ReadingPalette → ReadingIccProfile → Complete
     fn read_metadata_impl(&mut self, progress: MetadataProgress) -> ImageResult<()> {
         match progress {
             MetadataProgress::NotStarted => {
@@ -1323,8 +1313,8 @@ impl<R: BufRead + Seek> BmpDecoder<R> {
         // Parse ICC profile metadata from V5 header (but don't read the profile data yet)
         let mut icc_meta = None;
         if bmp_header_size >= BITMAPV5HEADER_SIZE {
-            // Read the full V5 header into a buffer for ICC profile metadata parsing
-            // V5 header is 124 bytes total, minus 4-byte size field = 120 bytes
+            // Read the full DIB header into a buffer for ICC profile metadata parsing
+            // The buffer size is (bmp_header_size - 4) to exclude the 4-byte size field
             let mut header_buffer = vec![0u8; (bmp_header_size - 4) as usize];
             let current_pos = self.reader.stream_position()?;
             self.reader.seek(SeekFrom::Start(bmp_header_offset + 4))?;
