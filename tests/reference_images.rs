@@ -33,6 +33,7 @@ fn main() -> std::process::ExitCode {
         if !entry.file_type().is_file()
             || entry.path().extension().is_none()
             || entry.path().extension() == Some("txt".as_ref())
+            || entry.path().extension() == Some("md".as_ref())
         {
             continue;
         }
