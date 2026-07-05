@@ -682,97 +682,10 @@ mod test {
         assert!(decoder.read_image(&mut buf).is_ok());
     }
 
-    // Regression tests for https://github.com/image-rs/image/issues/3061: disposal compositing
-    // corrupted the output (and the persistent disposal state) for pixels that are outside a
-    // frame's own rectangle but still covered by that frame's row range (partial-width frames,
-    // the row-based "slow path") or column range (full-width, partial-height frames, the
-    // contiguous "fast path"). Those pixels must passthrough the previous frame's composited
-    // value; the buggy code instead reset them to zero (transparent black).
-
-    #[test]
-    fn disposal_partial_width_frame_preserves_previous_state_outside_rect() {
-        // `border_touching_layers.gif` (100x100 canvas):
-        //   frame 1: left=0  top=25 width=100 height=50 (full width, partial height)
-        //   frame 2: left=25 top=0  width=50  height=100 (full height, partial width)
-        // Frame 2 does not span the full canvas width, so columns [0, 25) and [75, 100) are
-        // outside its own pixel data for every row and must equal frame 1's composited pixels.
-        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("tests/images/gif/anim/border_touching_layers.gif");
-        let file = io::BufReader::new(std::fs::File::open(&path).unwrap());
-        let decoder: Box<dyn ImageDecoder> = Box::new(GifDecoder::new(file).unwrap());
-        let frames = crate::ImageReader::from_decoder(decoder)
-            .into_frames()
-            .collect_frames()
-            .expect("failed to decode border_touching_layers.gif");
-        assert_eq!(frames.len(), 2);
-
-        let frame1 = frames[0].buffer();
-        let frame2 = frames[1].buffer();
-        for y in 0..frame2.height() {
-            for x in (0..25).chain(75..100) {
-                assert_eq!(
-                    *frame2.get_pixel(x, y),
-                    *frame1.get_pixel(x, y),
-                    "frame 2 pixel ({x}, {y}) is outside frame 2's horizontal extent and must \
-                     passthrough frame 1's composited pixel, not be reset to zero"
-                );
-            }
-        }
-    }
-
-    #[test]
-    fn disposal_full_width_partial_height_frame_preserves_previous_state_outside_rows() {
-        // Synthetic GIF (4x6 canvas) covering the "fast path" (frame.left == 0 && frame.width ==
-        // canvas width): frame 1 fills the whole canvas with red, frame 2 only covers rows
-        // [2, 4) with blue. Rows [0, 2) and [4, 6) are outside frame 2's own pixel data and must
-        // equal frame 1's composited (red) pixels.
-        let width = 4u16;
-        let height = 6u16;
-
-        let mut gif_bytes = Vec::new();
-        {
-            let mut encoder = gif::Encoder::new(&mut gif_bytes, width, height, &[]).unwrap();
-
-            let mut red = [255u8, 0, 0, 255].repeat(width as usize * height as usize);
-            let mut frame1 = Frame::from_rgba_speed(width, height, &mut red, 30);
-            frame1.dispose = DisposalMethod::Keep;
-            encoder.write_frame(&frame1).unwrap();
-
-            let mut blue = [0u8, 0, 255, 255].repeat(width as usize * 2);
-            let mut frame2 = Frame::from_rgba_speed(width, 2, &mut blue, 30);
-            frame2.top = 2;
-            frame2.left = 0;
-            frame2.dispose = DisposalMethod::Keep;
-            encoder.write_frame(&frame2).unwrap();
-        }
-
-        let decoder: Box<dyn ImageDecoder> =
-            Box::new(GifDecoder::new(io::Cursor::new(gif_bytes)).unwrap());
-        let frames = crate::ImageReader::from_decoder(decoder)
-            .into_frames()
-            .collect_frames()
-            .expect("failed to decode synthetic test gif");
-        assert_eq!(frames.len(), 2);
-
-        let frame1 = frames[0].buffer();
-        let frame2 = frames[1].buffer();
-
-        // Sanity: rows within frame 2's own extent are actually blue.
-        for y in 2..4 {
-            for x in 0..u32::from(width) {
-                assert_eq!(frame2.get_pixel(x, y).0, [0, 0, 255, 255]);
-            }
-        }
-
-        for y in (0..2).chain(4..6) {
-            for x in 0..u32::from(width) {
-                assert_eq!(
-                    *frame2.get_pixel(x, y),
-                    *frame1.get_pixel(x, y),
-                    "frame 2 pixel ({x}, {y}) is outside frame 2's vertical extent and must \
-                     passthrough frame 1's composited pixel, not be reset to zero"
-                );
-            }
-        }
-    }
+    // Regression coverage for https://github.com/image-rs/image/issues/3061 (disposal compositing
+    // corrupted pixels outside a frame's own rectangle but still covered by that frame's row or
+    // column range) now lives entirely in the reference-image test suite: the row-based path is
+    // covered by `tests/reference/gif/anim/border_touching_layers.gif.anim_{01,02}.png`, and the
+    // contiguous fast path is covered by
+    // `tests/images/gif/anim/disposal_full_width_partial_height_frame_preserves_previous_state_outside_rows.gif`.
 }
