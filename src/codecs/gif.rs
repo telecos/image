@@ -681,11 +681,4 @@ mod test {
         let mut buf = vec![0u8; layout.total_bytes() as usize];
         assert!(decoder.read_image(&mut buf).is_ok());
     }
-
-    // Regression coverage for https://github.com/image-rs/image/issues/3061 (disposal compositing
-    // corrupted pixels outside a frame's own rectangle but still covered by that frame's row or
-    // column range) now lives entirely in the reference-image test suite: the row-based path is
-    // covered by `tests/reference/gif/anim/border_touching_layers.gif.anim_{01,02}.png`, and the
-    // contiguous fast path is covered by
-    // `tests/images/gif/anim/disposal_full_width_partial_height_frame_preserves_previous_state_outside_rows.gif`.
 }
