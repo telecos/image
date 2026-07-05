@@ -207,26 +207,24 @@ impl<R: BufRead + Seek> ImageDecoder for GifDecoder<R> {
 
         if let Some((frame_start, frame_len)) = frame_start_len {
             // isolate the portion of the buffer to read the frame data into.
-            // the chunks above and below it are going to be zeroed.
+            // the rows above and below it are outside this frame's own pixel data, so they
+            // must passthrough the previous frame's composited state (as if by
+            // `DisposalMethod::Previous`), matching the row-based path below.
+            let non_disposed_frame = self.non_disposed_frame.as_ref().unwrap();
             let (blank_top, rest) = buf.split_at_mut(frame_start);
             let (buf, blank_bottom) = rest.split_at_mut(frame_len);
 
             debug_assert_eq!(buf.len(), decoder.buffer_size());
 
-            // this is only necessary in case the buffer is not zeroed
-            for b in blank_top {
-                *b = 0;
-            }
+            blank_top.copy_from_slice(&non_disposed_frame.subpixels()[..frame_start]);
 
             // fill the middle section with the frame data
             decoder
                 .read_into_buffer(buf)
                 .map_err(ImageError::from_decoding)?;
 
-            // this is only necessary in case the buffer is not zeroed
-            for b in blank_bottom {
-                *b = 0;
-            }
+            blank_bottom
+                .copy_from_slice(&non_disposed_frame.subpixels()[frame_start + frame_len..]);
         } else {
             // If the frame does not match the logical screen, read into an extra buffer
             // and 'insert' the frame from left/top to logical screen width/height.
@@ -325,7 +323,7 @@ impl<R: BufRead + Seek> ImageDecoder for GifDecoder<R> {
                 let non_disposed_data = &mut non_disposed_frame.subpixels_mut()[start..][..row_len];
                 let frame_data = &mut buf[start..][..row_len];
 
-                non_disposed_data[..row_skip].copy_from_slice(&frame_data[..row_skip]);
+                frame_data[..row_skip].copy_from_slice(&non_disposed_data[..row_skip]);
 
                 blend_and_dispose_region(
                     frame.disposal_method,
@@ -334,7 +332,7 @@ impl<R: BufRead + Seek> ImageDecoder for GifDecoder<R> {
                 );
 
                 let after_frame = row_skip + data_len;
-                non_disposed_data[after_frame..].copy_from_slice(&frame_data[after_frame..]);
+                frame_data[after_frame..].copy_from_slice(&non_disposed_data[after_frame..]);
             }
 
             for y in (frame.top + frame.height)..height {
@@ -682,5 +680,99 @@ mod test {
 
         let mut buf = vec![0u8; layout.total_bytes() as usize];
         assert!(decoder.read_image(&mut buf).is_ok());
+    }
+
+    // Regression tests for https://github.com/image-rs/image/issues/3061: disposal compositing
+    // corrupted the output (and the persistent disposal state) for pixels that are outside a
+    // frame's own rectangle but still covered by that frame's row range (partial-width frames,
+    // the row-based "slow path") or column range (full-width, partial-height frames, the
+    // contiguous "fast path"). Those pixels must passthrough the previous frame's composited
+    // value; the buggy code instead reset them to zero (transparent black).
+
+    #[test]
+    fn disposal_partial_width_frame_preserves_previous_state_outside_rect() {
+        // `border_touching_layers.gif` (100x100 canvas):
+        //   frame 1: left=0  top=25 width=100 height=50 (full width, partial height)
+        //   frame 2: left=25 top=0  width=50  height=100 (full height, partial width)
+        // Frame 2 does not span the full canvas width, so columns [0, 25) and [75, 100) are
+        // outside its own pixel data for every row and must equal frame 1's composited pixels.
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/images/gif/anim/border_touching_layers.gif");
+        let file = io::BufReader::new(std::fs::File::open(&path).unwrap());
+        let decoder: Box<dyn ImageDecoder> = Box::new(GifDecoder::new(file).unwrap());
+        let frames = crate::ImageReader::from_decoder(decoder)
+            .into_frames()
+            .collect_frames()
+            .expect("failed to decode border_touching_layers.gif");
+        assert_eq!(frames.len(), 2);
+
+        let frame1 = frames[0].buffer();
+        let frame2 = frames[1].buffer();
+        for y in 0..frame2.height() {
+            for x in (0..25).chain(75..100) {
+                assert_eq!(
+                    *frame2.get_pixel(x, y),
+                    *frame1.get_pixel(x, y),
+                    "frame 2 pixel ({x}, {y}) is outside frame 2's horizontal extent and must \
+                     passthrough frame 1's composited pixel, not be reset to zero"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn disposal_full_width_partial_height_frame_preserves_previous_state_outside_rows() {
+        // Synthetic GIF (4x6 canvas) covering the "fast path" (frame.left == 0 && frame.width ==
+        // canvas width): frame 1 fills the whole canvas with red, frame 2 only covers rows
+        // [2, 4) with blue. Rows [0, 2) and [4, 6) are outside frame 2's own pixel data and must
+        // equal frame 1's composited (red) pixels.
+        let width = 4u16;
+        let height = 6u16;
+
+        let mut gif_bytes = Vec::new();
+        {
+            let mut encoder = gif::Encoder::new(&mut gif_bytes, width, height, &[]).unwrap();
+
+            let mut red = [255u8, 0, 0, 255].repeat(width as usize * height as usize);
+            let mut frame1 = Frame::from_rgba_speed(width, height, &mut red, 30);
+            frame1.dispose = DisposalMethod::Keep;
+            encoder.write_frame(&frame1).unwrap();
+
+            let mut blue = [0u8, 0, 255, 255].repeat(width as usize * 2);
+            let mut frame2 = Frame::from_rgba_speed(width, 2, &mut blue, 30);
+            frame2.top = 2;
+            frame2.left = 0;
+            frame2.dispose = DisposalMethod::Keep;
+            encoder.write_frame(&frame2).unwrap();
+        }
+
+        let decoder: Box<dyn ImageDecoder> =
+            Box::new(GifDecoder::new(io::Cursor::new(gif_bytes)).unwrap());
+        let frames = crate::ImageReader::from_decoder(decoder)
+            .into_frames()
+            .collect_frames()
+            .expect("failed to decode synthetic test gif");
+        assert_eq!(frames.len(), 2);
+
+        let frame1 = frames[0].buffer();
+        let frame2 = frames[1].buffer();
+
+        // Sanity: rows within frame 2's own extent are actually blue.
+        for y in 2..4 {
+            for x in 0..u32::from(width) {
+                assert_eq!(frame2.get_pixel(x, y).0, [0, 0, 255, 255]);
+            }
+        }
+
+        for y in (0..2).chain(4..6) {
+            for x in 0..u32::from(width) {
+                assert_eq!(
+                    *frame2.get_pixel(x, y),
+                    *frame1.get_pixel(x, y),
+                    "frame 2 pixel ({x}, {y}) is outside frame 2's vertical extent and must \
+                     passthrough frame 1's composited pixel, not be reset to zero"
+                );
+            }
+        }
     }
 }
