@@ -207,26 +207,24 @@ impl<R: BufRead + Seek> ImageDecoder for GifDecoder<R> {
 
         if let Some((frame_start, frame_len)) = frame_start_len {
             // isolate the portion of the buffer to read the frame data into.
-            // the chunks above and below it are going to be zeroed.
+            // the rows above and below it are outside this frame's own pixel data, so they
+            // must passthrough the previous frame's composited state (as if by
+            // `DisposalMethod::Previous`), matching the row-based path below.
+            let non_disposed_frame = self.non_disposed_frame.as_ref().unwrap();
             let (blank_top, rest) = buf.split_at_mut(frame_start);
             let (buf, blank_bottom) = rest.split_at_mut(frame_len);
 
             debug_assert_eq!(buf.len(), decoder.buffer_size());
 
-            // this is only necessary in case the buffer is not zeroed
-            for b in blank_top {
-                *b = 0;
-            }
+            blank_top.copy_from_slice(&non_disposed_frame.subpixels()[..frame_start]);
 
             // fill the middle section with the frame data
             decoder
                 .read_into_buffer(buf)
                 .map_err(ImageError::from_decoding)?;
 
-            // this is only necessary in case the buffer is not zeroed
-            for b in blank_bottom {
-                *b = 0;
-            }
+            blank_bottom
+                .copy_from_slice(&non_disposed_frame.subpixels()[frame_start + frame_len..]);
         } else {
             // If the frame does not match the logical screen, read into an extra buffer
             // and 'insert' the frame from left/top to logical screen width/height.
@@ -325,7 +323,7 @@ impl<R: BufRead + Seek> ImageDecoder for GifDecoder<R> {
                 let non_disposed_data = &mut non_disposed_frame.subpixels_mut()[start..][..row_len];
                 let frame_data = &mut buf[start..][..row_len];
 
-                non_disposed_data[..row_skip].copy_from_slice(&frame_data[..row_skip]);
+                frame_data[..row_skip].copy_from_slice(&non_disposed_data[..row_skip]);
 
                 blend_and_dispose_region(
                     frame.disposal_method,
@@ -334,7 +332,7 @@ impl<R: BufRead + Seek> ImageDecoder for GifDecoder<R> {
                 );
 
                 let after_frame = row_skip + data_len;
-                non_disposed_data[after_frame..].copy_from_slice(&frame_data[after_frame..]);
+                frame_data[after_frame..].copy_from_slice(&non_disposed_data[after_frame..]);
             }
 
             for y in (frame.top + frame.height)..height {
@@ -373,14 +371,12 @@ fn blend_and_dispose_region(
     non_disposed_data: &mut [u8],
     frame_data: &mut [u8],
 ) {
-    for (disposed, pixel) in non_disposed_data
-        .chunks_exact_mut(4)
-        .zip(frame_data.chunks_exact_mut(4))
-    {
+    let non_disposed_data = Rgba::<u8>::pixels_from_channels_mut(non_disposed_data);
+    let frame_data = Rgba::<u8>::pixels_from_channels_mut(frame_data);
+
+    for (disposed, pixel) in non_disposed_data.iter_mut().zip(frame_data.iter_mut()) {
         // FIXME: internal dispatch on disposal method may be slow, investigate if this is
         // properly and reliably vectorized.
-        let disposed = Rgba::<u8>::from_slice_mut(disposed);
-        let pixel = Rgba::<u8>::from_slice_mut(pixel);
         blend_and_dispose_pixel(dispose, disposed, pixel);
     }
 }
