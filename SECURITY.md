@@ -29,7 +29,7 @@ reported as normal bugs:
 Our libraries extensively use assertions to detect implementation bugs and while we strive not to
 panic even on crafted inputs, it isn't guaranteed.
 
-**Contrived soundess bugs:** If there isn't likely to be downstream code that triggers
+**Contrived soundness bugs:** If there isn't likely to be downstream code that triggers
 undefined-behavior due to the bug, then it doesn't qualify as a vulnerability.
 
 **Out-of-memory or other denial of service:** Resource limits are on a best-effort basis.
