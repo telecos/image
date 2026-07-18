@@ -34,10 +34,11 @@ undefined-behavior due to the bug, then it doesn't qualify as a vulnerability.
 
 **Out-of-memory or other denial of service:** Resource limits are on a best-effort basis.
 
-**Vulnerabilities in tests, benchmarks, or examples:** Downsteam users do not run these directly so
+**Vulnerabilities in tests, benchmarks, or examples:** Downstream users do not run these directly so
 issues like path traversal, soundness bugs, and such are not a concern. The exception here is if
 merely running the code could compromise a developer's machine.
 
-**Vulnerabilities in GitHub Actions code:** We don't expose any secrets to our CI and don't use use
-[trusted publishing](https://crates.io/docs/trusted-publishing), so the worst that could happen here
-is wasting our (free) quota or getting inaccurate test results.
+**Code execution in GitHub Actions:** Our CI is configured to have read-only access and we don't use
+[trusted publishing](https://crates.io/docs/trusted-publishing) or self-hosted runners, so merely
+running attacker controlled code isn't a big risk. Escalating to repository write-access or similar
+should of course be treated as a vulnerability.
