@@ -130,6 +130,10 @@ impl ImageFormat {
 
     /// Return the image format specified by a MIME type.
     ///
+    /// The type and subtype are matched case-insensitively, as required by the
+    /// MIME specification. MIME type parameters (such as `; charset=utf-8`) are
+    /// not supported and must be stripped by the caller beforehand.
+    ///
     /// # Example
     ///
     /// ```
@@ -142,7 +146,9 @@ impl ImageFormat {
     where
         M: AsRef<str>,
     {
-        match mime_type.as_ref() {
+        // NOTE: MIME type and subtype are case-insensitive, so normalize before matching.
+        let mime_type = mime_type.as_ref().to_ascii_lowercase();
+        match mime_type.as_str() {
             "image/avif" => Some(ImageFormat::Avif),
             "image/jpeg" => Some(ImageFormat::Jpeg),
             "image/png" => Some(ImageFormat::Png),
@@ -364,6 +370,35 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn from_mime_type_is_case_insensitive() {
+        // The type and subtype of a MIME type are case-insensitive per RFC 2045,
+        // so `from_mime_type` must accept any casing (as seen in real HTTP headers).
+        assert_eq!(
+            ImageFormat::from_mime_type("image/png"),
+            Some(ImageFormat::Png)
+        );
+        assert_eq!(
+            ImageFormat::from_mime_type("IMAGE/PNG"),
+            Some(ImageFormat::Png)
+        );
+        assert_eq!(
+            ImageFormat::from_mime_type("Image/Png"),
+            Some(ImageFormat::Png)
+        );
+        assert_eq!(
+            ImageFormat::from_mime_type("IMAGE/X-TARGA"),
+            Some(ImageFormat::Tga)
+        );
+        // Unknown MIME types still return `None`.
+        assert_eq!(ImageFormat::from_mime_type("image/jheic"), None);
+        // Parameters are not supported and must be stripped by the caller.
+        assert_eq!(
+            ImageFormat::from_mime_type("image/png; charset=utf-8"),
+            None
+        );
     }
 
     #[test]
