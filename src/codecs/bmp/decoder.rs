@@ -2523,6 +2523,47 @@ mod test {
         assert!(decoder.read_image(&mut buf).is_ok());
     }
 
+    fn make_rle4_bmp(bit_count: u16, width: i32, rle_data: &[u8]) -> Vec<u8> {
+        const PIXEL_DATA_OFFSET: usize = 62;
+
+        let mut data = vec![0; PIXEL_DATA_OFFSET];
+        data[0..2].copy_from_slice(b"BM");
+        data[10..14].copy_from_slice(&(PIXEL_DATA_OFFSET as u32).to_le_bytes());
+        data[14..18].copy_from_slice(&BITMAPINFOHEADER_SIZE.to_le_bytes());
+        data[18..22].copy_from_slice(&width.to_le_bytes());
+        data[22..26].copy_from_slice(&1i32.to_le_bytes());
+        data[26..28].copy_from_slice(&1u16.to_le_bytes());
+        data[28..30].copy_from_slice(&bit_count.to_le_bytes());
+        data[30..34].copy_from_slice(&BI_RLE4.to_le_bytes());
+        data[34..38].copy_from_slice(&(rle_data.len() as u32).to_le_bytes());
+        data[46..50].copy_from_slice(&2u32.to_le_bytes());
+        data[58..62].copy_from_slice(&[0, 0, 0xff, 0]);
+        data.extend_from_slice(rle_data);
+        let file_size = data.len() as u32;
+        data[2..6].copy_from_slice(&file_size.to_le_bytes());
+        data
+    }
+
+    #[test]
+    fn rle4_encoded_row_overflow_respects_strictness() {
+        let data = make_rle4_bmp(4, 1, &[2, 0x10, 0, 1]);
+
+        let mut decoder = BmpDecoder::new(Cursor::new(&data)).unwrap();
+        let mut buf = vec![0; decoder.prepare_image().unwrap().total_bytes() as usize];
+        decoder.read_image(&mut buf).unwrap();
+        assert_eq!(buf, [0xff, 0, 0]);
+
+        let strict_result =
+            BmpDecoder::with_spec_compliance(Cursor::new(&data), SpecCompliance::Strict).and_then(
+                |mut decoder| {
+                    let mut buf =
+                        vec![0; decoder.prepare_image()?.total_bytes() as usize];
+                    decoder.read_image(&mut buf)
+                },
+            );
+        assert!(strict_result.is_err());
+    }
+
     #[test]
     fn test_no_header() {
         let tests = [
