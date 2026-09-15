@@ -1263,6 +1263,7 @@ impl<R: BufRead + Seek> BmpDecoder<R> {
         bit_count: u16,
         add_alpha_channel: bool,
         header_type: &BMPHeaderType,
+        spec_strictness: SpecCompliance,
     ) -> ImageResult<ImageType> {
         match compression {
             BI_RGB => match bit_count {
@@ -1283,6 +1284,7 @@ impl<R: BufRead + Seek> BmpDecoder<R> {
             },
             BI_RLE4 => match bit_count {
                 4 => Ok(ImageType::RLE4),
+                1 | 2 if spec_strictness == SpecCompliance::Lenient => Ok(ImageType::RLE4),
                 _ => Err(
                     DecoderError::InvalidChannelWidth(ChannelWidthError::Rle4, bit_count).into(),
                 ),
@@ -1373,6 +1375,7 @@ impl<R: BufRead + Seek> BmpDecoder<R> {
             parsed.bit_count,
             self.add_alpha_channel,
             &self.bmp_header_type,
+            self.spec_strictness,
         )?;
 
         check_for_overflow(self.width, self.height, self.num_channels())?;
@@ -1401,6 +1404,7 @@ impl<R: BufRead + Seek> BmpDecoder<R> {
             parsed.bit_count,
             self.add_alpha_channel,
             &self.bmp_header_type,
+            self.spec_strictness,
         )?;
 
         check_for_overflow(self.width, self.height, self.num_channels())?;
@@ -1784,6 +1788,16 @@ impl<R: BufRead + Seek> BmpDecoder<R> {
         let max_length = MAX_PALETTE_SIZE * bytes_per_color;
 
         let length = palette_size * bytes_per_color;
+        if self.image_type == ImageType::RLE4 && self.bit_count < 4 {
+            let palette_end = self
+                .reader
+                .stream_position()?
+                .checked_add(length as u64)
+                .ok_or(DecoderError::CorruptRleData)?;
+            if palette_end > self.data_offset {
+                return Err(DecoderError::CorruptRleData.into());
+            }
+        }
         let mut buf = vec_try_with_capacity(max_length)?;
 
         // Resize and read the palette entries to the buffer.
@@ -2521,6 +2535,54 @@ mod test {
         let layout = decoder.prepare_image().unwrap();
         let mut buf = vec![0; usize::try_from(layout.total_bytes()).unwrap()];
         assert!(decoder.read_image(&mut buf).is_ok());
+    }
+
+    fn make_rle4_bmp(bit_count: u16, width: i32, rle_data: &[u8]) -> Vec<u8> {
+        const PIXEL_DATA_OFFSET: usize = 62;
+
+        let mut data = vec![0; PIXEL_DATA_OFFSET];
+        data[0..2].copy_from_slice(b"BM");
+        data[10..14].copy_from_slice(&(PIXEL_DATA_OFFSET as u32).to_le_bytes());
+        data[14..18].copy_from_slice(&BITMAPINFOHEADER_SIZE.to_le_bytes());
+        data[18..22].copy_from_slice(&width.to_le_bytes());
+        data[22..26].copy_from_slice(&1i32.to_le_bytes());
+        data[26..28].copy_from_slice(&1u16.to_le_bytes());
+        data[28..30].copy_from_slice(&bit_count.to_le_bytes());
+        data[30..34].copy_from_slice(&BI_RLE4.to_le_bytes());
+        data[34..38].copy_from_slice(&(rle_data.len() as u32).to_le_bytes());
+        data[46..50].copy_from_slice(&2u32.to_le_bytes());
+        data[58..62].copy_from_slice(&[0, 0, 0xff, 0]);
+        data.extend_from_slice(rle_data);
+        let file_size = data.len() as u32;
+        data[2..6].copy_from_slice(&file_size.to_le_bytes());
+        data
+    }
+
+    #[test]
+    fn rle4_low_bit_depth_respects_strictness() {
+        for bit_count in [1, 2] {
+            let data = make_rle4_bmp(bit_count, 2, &[2, 0x11, 0, 1]);
+
+            let mut decoder = BmpDecoder::new(Cursor::new(&data)).unwrap();
+            let mut buf = vec![0; decoder.prepare_image().unwrap().total_bytes() as usize];
+            decoder.read_image(&mut buf).unwrap();
+            assert_eq!(buf, [0xff, 0, 0, 0xff, 0, 0]);
+
+            assert!(
+                BmpDecoder::with_spec_compliance(Cursor::new(data), SpecCompliance::Strict)
+                    .is_err()
+            );
+        }
+    }
+
+    #[test]
+    fn rle4_low_bit_depth_rejects_invalid_depth_and_palette() {
+        let invalid_depth = make_rle4_bmp(3, 2, &[2, 0x11, 0, 1]);
+        assert!(BmpDecoder::new(Cursor::new(invalid_depth)).is_err());
+
+        let mut overlapping_palette = make_rle4_bmp(1, 2, &[2, 0x11, 0, 1]);
+        overlapping_palette[10..14].copy_from_slice(&54u32.to_le_bytes());
+        assert!(BmpDecoder::new(Cursor::new(overlapping_palette)).is_err());
     }
 
     #[test]
