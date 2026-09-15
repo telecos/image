@@ -1244,6 +1244,10 @@ impl<R: BufRead + Seek> BmpDecoder<R> {
         let mut buffer = [0u8; FILE_HEADER_SIZE as usize];
         self.reader.read_exact(&mut buffer)?;
 
+        if &buffer[0..2] == b"BA" {
+            self.reader.read_exact(&mut buffer)?;
+        }
+
         // Check signature
         if &buffer[0..2] != b"BM" {
             return Err(DecoderError::BmpSignatureInvalid.into());
@@ -2521,6 +2525,49 @@ mod test {
         let layout = decoder.prepare_image().unwrap();
         let mut buf = vec![0; usize::try_from(layout.total_bytes()).unwrap()];
         assert!(decoder.read_image(&mut buf).is_ok());
+    }
+
+    fn make_bitmap_array() -> Vec<u8> {
+        const PIXEL_DATA_OFFSET: usize = 40;
+
+        let mut data = vec![0; PIXEL_DATA_OFFSET];
+        data[0..2].copy_from_slice(b"BA");
+        data[2..6].copy_from_slice(&44u32.to_le_bytes());
+        data[14..16].copy_from_slice(b"BM");
+        data[16..20].copy_from_slice(&30u32.to_le_bytes());
+        data[24..28].copy_from_slice(&(PIXEL_DATA_OFFSET as u32).to_le_bytes());
+        data[28..32].copy_from_slice(&BITMAPCOREHEADER_SIZE.to_le_bytes());
+        data[32..34].copy_from_slice(&1u16.to_le_bytes());
+        data[34..36].copy_from_slice(&1u16.to_le_bytes());
+        data[36..38].copy_from_slice(&1u16.to_le_bytes());
+        data[38..40].copy_from_slice(&24u16.to_le_bytes());
+        data.extend_from_slice(&[0, 0, 0xff, 0]);
+        data
+    }
+
+    #[test]
+    fn bitmap_array_decodes_first_image() {
+        let data = make_bitmap_array();
+
+        let mut decoder = BmpDecoder::new(Cursor::new(&data)).unwrap();
+        let mut buf = vec![0; decoder.prepare_image().unwrap().total_bytes() as usize];
+        decoder.read_image(&mut buf).unwrap();
+        assert_eq!(buf, [0xff, 0, 0]);
+
+        assert_eq!(crate::guess_format(&data).unwrap(), ImageFormat::Bmp);
+        assert_eq!(
+            crate::load_from_memory(&data).unwrap().into_rgb8().as_raw(),
+            &[0xff, 0, 0]
+        );
+    }
+
+    #[test]
+    fn bitmap_array_rejects_invalid_embedded_header() {
+        let mut data = make_bitmap_array();
+        assert!(BmpDecoder::new(Cursor::new(&data[..FILE_HEADER_SIZE as usize])).is_err());
+
+        data[14..16].copy_from_slice(b"BX");
+        assert!(BmpDecoder::new(Cursor::new(data)).is_err());
     }
 
     #[test]

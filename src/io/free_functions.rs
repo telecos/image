@@ -103,7 +103,7 @@ pub(crate) fn encoder_for_format<'a, W: Write + Seek>(
     })
 }
 
-static MAGIC_BYTES: [(&[u8], &[u8], ImageFormat); 21] = [
+static MAGIC_BYTES: [(&[u8], &[u8], ImageFormat); 22] = [
     (b"\x89PNG\r\n\x1a\n", b"", ImageFormat::Png),
     (&[0xff, 0xd8, 0xff], b"", ImageFormat::Jpeg),
     (b"GIF89a", b"", ImageFormat::Gif),
@@ -116,6 +116,7 @@ static MAGIC_BYTES: [(&[u8], &[u8], ImageFormat); 21] = [
     (b"MM\x00*", b"", ImageFormat::Tiff),
     (b"II*\x00", b"", ImageFormat::Tiff),
     (b"BM", b"", ImageFormat::Bmp),
+    (b"BA", b"", ImageFormat::Bmp),
     (&[0, 0, 1, 0], b"", ImageFormat::Ico),
     (b"#?RADIANCE", b"", ImageFormat::Hdr),
     (b"\0\0\0\0ftypavif", b"\0\0\0\0", ImageFormat::Avif),
