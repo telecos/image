@@ -2556,8 +2556,7 @@ mod test {
         let strict_result =
             BmpDecoder::with_spec_compliance(Cursor::new(&data), SpecCompliance::Strict).and_then(
                 |mut decoder| {
-                    let mut buf =
-                        vec![0; decoder.prepare_image()?.total_bytes() as usize];
+                    let mut buf = vec![0; decoder.prepare_image()?.total_bytes() as usize];
                     decoder.read_image(&mut buf)
                 },
             );
