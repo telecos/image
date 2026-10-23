@@ -50,6 +50,9 @@ pub enum ImageFormat {
 
     /// An Image in QOI Format
     Qoi,
+
+    /// A standalone JBIG2 file.
+    Jbig2,
 }
 
 impl ImageFormat {
@@ -75,6 +78,7 @@ impl ImageFormat {
             Some(match ext.as_str() {
                 "avif" => ImageFormat::Avif,
                 "jpg" | "jpeg" | "jfif" => ImageFormat::Jpeg,
+                "jb2" | "jbig2" => ImageFormat::Jbig2,
                 "png" | "apng" => ImageFormat::Png,
                 "gif" => ImageFormat::Gif,
                 "webp" => ImageFormat::WebP,
@@ -196,6 +200,7 @@ impl ImageFormat {
         match self {
             ImageFormat::Avif => "image/avif",
             ImageFormat::Jpeg => "image/jpeg",
+            ImageFormat::Jbig2 => "application/octet-stream",
             ImageFormat::Png => "image/png",
             ImageFormat::Gif => "image/gif",
             ImageFormat::WebP => "image/webp",
@@ -231,6 +236,7 @@ impl ImageFormat {
         match self {
             ImageFormat::Png => &["png"],
             ImageFormat::Jpeg => &["jpg", "jpeg"],
+            ImageFormat::Jbig2 => &["jb2", "jbig2"],
             ImageFormat::Gif => &["gif"],
             ImageFormat::WebP => &["webp"],
             ImageFormat::Pnm => &["pbm", "pam", "ppm", "pgm", "pnm"],
@@ -258,6 +264,7 @@ impl ImageFormat {
             ImageFormat::Png => cfg!(feature = "png"),
             ImageFormat::Gif => cfg!(feature = "gif"),
             ImageFormat::Jpeg => cfg!(feature = "jpeg"),
+            ImageFormat::Jbig2 => cfg!(feature = "jbig2"),
             ImageFormat::WebP => cfg!(feature = "webp"),
             ImageFormat::Tiff => cfg!(feature = "tiff"),
             ImageFormat::Tga => cfg!(feature = "tga"),
@@ -283,6 +290,7 @@ impl ImageFormat {
             ImageFormat::Gif => cfg!(feature = "gif"),
             ImageFormat::Ico => cfg!(feature = "ico"),
             ImageFormat::Jpeg => cfg!(feature = "jpeg"),
+            ImageFormat::Jbig2 => false,
             ImageFormat::Png => cfg!(feature = "png"),
             ImageFormat::Bmp => cfg!(feature = "bmp"),
             ImageFormat::Tiff => cfg!(feature = "tiff"),
@@ -303,6 +311,7 @@ impl ImageFormat {
             ImageFormat::Gif,
             ImageFormat::Ico,
             ImageFormat::Jpeg,
+            ImageFormat::Jbig2,
             ImageFormat::Png,
             ImageFormat::Bmp,
             ImageFormat::Tiff,

@@ -210,6 +210,8 @@ impl<'a, R: 'a + BufRead + Seek> ImageReaderOptions<R> {
             )),
             #[cfg(feature = "webp")]
             ImageFormat::WebP => Box::new(webp::WebPDecoder::new(reader)?),
+            #[cfg(feature = "jbig2")]
+            ImageFormat::Jbig2 => Box::new(jbig2::Jbig2Decoder::new(reader)),
             #[cfg(feature = "tiff")]
             ImageFormat::Tiff => Box::new(tiff::TiffDecoder::new(reader)?),
             #[cfg(feature = "tga")]

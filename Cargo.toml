@@ -68,6 +68,7 @@ tiff = { version = "0.11.2", optional = true }
 zune-core = { version = "0.5.0", default-features = false, optional = true }
 zune-jpeg = { version = "0.5.15", optional = true }
 jpeg-encoder = { version = "0.7.0", optional = true, features = ["simd"] }
+jbig2_rs = { path = "../jbig2_rs", optional = true }
 serde = { version = "1.0.214", optional = true, features = ["derive"] }
 pic-scale-safe = "0.1.5"
 
@@ -91,6 +92,7 @@ ff = [] # Farbfeld image format
 gif = ["dep:gif", "dep:color_quant"]
 hdr = []
 ico = ["bmp", "png"]
+jbig2 = ["dep:jbig2_rs"]
 jpeg = ["dep:zune-core", "dep:zune-jpeg", "dep:jpeg-encoder"]
 png = ["dep:png"]
 pnm = []

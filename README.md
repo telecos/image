@@ -56,6 +56,7 @@ implement it.
 | `color_quant`     | Includes `color_quant` as an implementation of `imageops::ColorMap`
 | `avif-native`     | Enables non-Rust dependencies of `avif` (`mp4parse` and `dav1d`)
 | `serde`           | Enables `serde` integration for various structs and options
+| `jbig2`           | Experimental, opt-in standalone single-page JBIG2 decoding using the sibling `jbig2_rs` checkout. See [evaluation and official pixel tests](docs/jbig2.md).
 
 Note: When using `image` in a library you intend to publish, it is recommended to set `default-features = false` and then explicitly enable format features that are absolutely necessary. This ensures a smaller dependency tree and faster iteration time. The default feature configuration would also enable multithreading which may cause unexpected behavior when running for inherently single-threaded environments such as `wasm` targets.
 

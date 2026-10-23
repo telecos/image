@@ -201,6 +201,7 @@ pub use crate::images::flat;
 /// | `gif`   | GIF      |
 /// | `hdr`   | HDR      |
 /// | `ico`   | ICO      |
+/// | `jbig2` | JBIG2    | Experimental, standalone single-page decoding only.
 /// | `jpeg`  | JPEG     |
 /// | `png`   | PNG      |
 /// | `pnm`   | PNM      |
@@ -243,6 +244,8 @@ pub mod codecs {
     pub mod hdr;
     #[cfg(feature = "ico")]
     pub mod ico;
+    #[cfg(feature = "jbig2")]
+    pub mod jbig2;
     #[cfg(feature = "jpeg")]
     pub mod jpeg;
     #[cfg(feature = "exr")]
